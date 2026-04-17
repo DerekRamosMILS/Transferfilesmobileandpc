@@ -433,6 +433,36 @@
         el.diagLog.textContent = state.diagLines.join("\n");
       }
 
+      function wireRtcDiagnostics(conn, roleLabel) {
+        try {
+          if (!conn || !conn.peerConnection) {
+            logDiag(roleLabel + ": sin peerConnection para diagnosticar");
+            return;
+          }
+
+          var pc = conn.peerConnection;
+          logDiag(roleLabel + ": RTCPeerConnection inicial signaling=" + pc.signalingState + ", ice=" + pc.iceConnectionState + ", conn=" + pc.connectionState);
+
+          pc.oniceconnectionstatechange = function () {
+            logDiag(roleLabel + ": iceConnectionState=" + pc.iceConnectionState);
+          };
+
+          pc.onconnectionstatechange = function () {
+            logDiag(roleLabel + ": connectionState=" + pc.connectionState);
+          };
+
+          pc.onsignalingstatechange = function () {
+            logDiag(roleLabel + ": signalingState=" + pc.signalingState);
+          };
+
+          pc.onicegatheringstatechange = function () {
+            logDiag(roleLabel + ": iceGatheringState=" + pc.iceGatheringState);
+          };
+        } catch (e) {
+          logDiag(roleLabel + ": error configurando diagnostico RTC");
+        }
+      }
+
       function setStatus(kind, text) {
         el.statusDot.className = "dot " + kind;
         el.statusText.textContent = text;
@@ -540,6 +570,7 @@
       function attachConnectionHandlers(conn) {
         state.conn = conn;
         logDiag("DataConnection creada");
+        wireRtcDiagnostics(conn, state.role === "host" ? "HOST" : "CLIENT");
 
         conn.on("open", function () {
           state.connecting = false;
@@ -648,7 +679,7 @@
 
       function createPeer(id) {
         return new Peer(id, {
-          debug: 1,
+          debug: 3,
           host: "0.peerjs.com",
           port: 443,
           path: "/",
@@ -789,7 +820,14 @@
 
         ensureClientPeer(function () {
           try {
-            var conn = state.peer.connect(code, { reliable: true });
+            var conn = state.peer.connect(code, {
+              reliable: false,
+              serialization: "none",
+              metadata: {
+                role: "client",
+                createdAt: Date.now()
+              }
+            });
             attachConnectionHandlers(conn);
 
             state.connectTimeoutTimer = setTimeout(function () {
