@@ -1,0 +1,806 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Transferencia de Texto P2P</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --fg: #111111;
+      --muted: #6b7280;
+      --line: #e5e7eb;
+      --accent: #111111;
+      --ok: #16a34a;
+      --wait: #9ca3af;
+      --err: #dc2626;
+      --radius: 14px;
+      --shadow: 0 6px 20px rgba(0, 0, 0, 0.06);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      min-height: 100%;
+    }
+
+    body {
+      display: flex;
+      justify-content: center;
+      padding: 18px;
+    }
+
+    .app {
+      width: min(100%, 760px);
+      display: grid;
+      gap: 16px;
+    }
+
+    .status {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: #ffffffd9;
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      box-shadow: var(--shadow);
+      width: fit-content;
+    }
+
+    .dot {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      background: var(--wait);
+      flex: 0 0 auto;
+    }
+
+    .dot.wait {
+      background: var(--wait);
+    }
+
+    .dot.ok {
+      background: var(--ok);
+    }
+
+    .dot.err {
+      background: var(--err);
+    }
+
+    .status-text {
+      font-size: 14px;
+      color: #1f2937;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 18px;
+      box-shadow: var(--shadow);
+      background: #fff;
+    }
+
+    .title {
+      margin: 0 0 8px;
+      font-size: 22px;
+      line-height: 1.2;
+      letter-spacing: 0.2px;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .role-buttons {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    button,
+    input,
+    textarea {
+      font: inherit;
+    }
+
+    button {
+      border: 1px solid #d1d5db;
+      background: #fff;
+      color: var(--fg);
+      border-radius: 12px;
+      padding: 12px 14px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+      touch-action: manipulation;
+    }
+
+    button:hover {
+      box-shadow: 0 5px 16px rgba(0, 0, 0, 0.08);
+    }
+
+    button:active {
+      transform: translateY(1px);
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    .btn-secondary {
+      background: #f9fafb;
+    }
+
+    .host-code-wrap {
+      text-align: center;
+      margin: 16px 0 6px;
+    }
+
+    .host-code {
+      margin: 0;
+      font-size: clamp(42px, 10vw, 72px);
+      line-height: 1;
+      letter-spacing: 8px;
+      font-weight: 800;
+      user-select: all;
+    }
+
+    .host-code-note {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .qr-box {
+      margin: 18px auto 8px;
+      width: 220px;
+      height: 220px;
+      display: grid;
+      place-items: center;
+      border: 1px dashed #d1d5db;
+      border-radius: 12px;
+      background: #fff;
+      overflow: hidden;
+    }
+
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .mt {
+      margin-top: 14px;
+    }
+
+    .input,
+    .textarea {
+      width: 100%;
+      border: 1px solid #d1d5db;
+      border-radius: 12px;
+      padding: 12px;
+      outline: none;
+      background: #fff;
+    }
+
+    .input {
+      font-size: 16px;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
+
+    .textarea {
+      min-height: 200px;
+      resize: vertical;
+      font-size: 16px;
+      line-height: 1.45;
+    }
+
+    .msg {
+      min-height: 22px;
+      color: var(--err);
+      font-size: 14px;
+      margin-top: 8px;
+    }
+
+    .caption {
+      margin: 0 0 8px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .grow {
+      flex: 1 1 auto;
+    }
+
+    @media (max-width: 480px) {
+      body {
+        padding: 12px;
+      }
+
+      .app {
+        gap: 12px;
+      }
+
+      .card {
+        padding: 14px;
+      }
+
+      .title {
+        font-size: 20px;
+      }
+
+      .role-buttons {
+        grid-template-columns: 1fr;
+      }
+
+      .qr-box {
+        width: 190px;
+        height: 190px;
+      }
+
+      button {
+        width: 100%;
+      }
+
+      .row.mobile-stack {
+        display: grid;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <div class="status" aria-live="polite">
+      <span id="statusDot" class="dot wait"></span>
+      <span id="statusText" class="status-text">Esperando acción</span>
+    </div>
+
+    <section id="roleView" class="card">
+      <h1 class="title">Transferencia de texto en tiempo real</h1>
+      <p class="subtitle">Usa este mismo archivo en ambos dispositivos. Elige un rol para comenzar.</p>
+      <div class="role-buttons">
+        <button id="btnRoleHost" class="btn-primary" type="button">Soy Host (PC)</button>
+        <button id="btnRoleClient" class="btn-secondary" type="button">Soy Cliente (Celular)</button>
+      </div>
+      <p class="caption mt">No se guarda historial. Al recargar, la sesión se reinicia.</p>
+    </section>
+
+    <section id="hostView" class="card hidden">
+      <h2 class="title">Modo Host</h2>
+      <p class="subtitle">Comparte este código o QR con el celular para conectarse.</p>
+
+      <div class="host-code-wrap">
+        <p id="hostCode" class="host-code">-----</p>
+        <p class="host-code-note">Código de conexión</p>
+      </div>
+
+      <div id="qrCode" class="qr-box" aria-label="Código QR"></div>
+
+      <div id="hostReceiveWrap" class="hidden mt">
+        <p class="caption">Texto recibido en tiempo real:</p>
+        <textarea id="hostReceivedText" class="textarea" readonly placeholder="Aquí aparecerá el texto recibido..."></textarea>
+        <div class="row mt mobile-stack">
+          <button id="btnCopy" type="button" class="btn-secondary">Copiar al portapapeles</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="clientView" class="card hidden">
+      <h2 class="title">Modo Cliente</h2>
+      <p class="subtitle">Ingresa el código del host y conecta.</p>
+
+      <div class="row mobile-stack mt">
+        <input id="clientCode" class="input grow" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Ej: ABCD1" />
+        <button id="btnConnect" class="btn-primary" type="button">Conectar</button>
+      </div>
+
+      <div id="clientWriteWrap" class="hidden mt">
+        <p class="caption">Escribe y se enviará automáticamente (cada 300ms):</p>
+        <textarea id="clientText" class="textarea" placeholder="Escribe aquí..."></textarea>
+        <div class="row mt mobile-stack">
+          <button id="btnSendNow" type="button" class="btn-secondary">Enviar ahora</button>
+        </div>
+      </div>
+
+      <p id="clientHelp" class="caption mt">Si el código no existe o expiró, vuelve a intentar.</p>
+    </section>
+
+    <p id="globalMessage" class="msg" aria-live="assertive"></p>
+  </main>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.2/peerjs.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      var ALPHANUM = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+      var CONNECTION_LOST_MSG = "Conexión perdida. Recarga la página para reconectar.";
+      var SIGNALING_FAIL_MSG = "No se pudo conectar. Verifica tu conexión a internet.";
+      var CODE_NOT_FOUND_MSG = "Código no encontrado. Verifica e intenta de nuevo.";
+
+      var state = {
+        role: null,
+        peer: null,
+        conn: null,
+        hostId: "",
+        connecting: false,
+        qr: null,
+        sendTimer: null,
+        lastPayload: ""
+      };
+
+      var el = {
+        statusDot: document.getElementById("statusDot"),
+        statusText: document.getElementById("statusText"),
+        globalMessage: document.getElementById("globalMessage"),
+
+        roleView: document.getElementById("roleView"),
+        hostView: document.getElementById("hostView"),
+        clientView: document.getElementById("clientView"),
+
+        btnRoleHost: document.getElementById("btnRoleHost"),
+        btnRoleClient: document.getElementById("btnRoleClient"),
+
+        hostCode: document.getElementById("hostCode"),
+        qrCode: document.getElementById("qrCode"),
+        hostReceiveWrap: document.getElementById("hostReceiveWrap"),
+        hostReceivedText: document.getElementById("hostReceivedText"),
+        btnCopy: document.getElementById("btnCopy"),
+
+        clientCode: document.getElementById("clientCode"),
+        btnConnect: document.getElementById("btnConnect"),
+        clientWriteWrap: document.getElementById("clientWriteWrap"),
+        clientText: document.getElementById("clientText"),
+        btnSendNow: document.getElementById("btnSendNow")
+      };
+
+      function setStatus(kind, text) {
+        el.statusDot.className = "dot " + kind;
+        el.statusText.textContent = text;
+      }
+
+      function setMessage(text) {
+        el.globalMessage.textContent = text || "";
+      }
+
+      function showView(viewName) {
+        el.roleView.classList.add("hidden");
+        el.hostView.classList.add("hidden");
+        el.clientView.classList.add("hidden");
+
+        if (viewName === "role") {
+          el.roleView.classList.remove("hidden");
+        } else if (viewName === "host") {
+          el.hostView.classList.remove("hidden");
+        } else if (viewName === "client") {
+          el.clientView.classList.remove("hidden");
+        }
+      }
+
+      function randomShortId(len) {
+        var out = "";
+        for (var i = 0; i < len; i += 1) {
+          out += ALPHANUM.charAt(Math.floor(Math.random() * ALPHANUM.length));
+        }
+        return out;
+      }
+
+      function buildJoinUrl(code) {
+        try {
+          var url = new URL(window.location.href);
+          url.searchParams.set("code", code);
+          return url.toString();
+        } catch (e) {
+          var cleanPath = window.location.pathname || "index.html";
+          return cleanPath + "?code=" + encodeURIComponent(code);
+        }
+      }
+
+      function getCodeFromUrl() {
+        try {
+          var params = new URLSearchParams(window.location.search || "");
+          var code = (params.get("code") || "").toUpperCase().replace(/\s+/g, "").replace(/[^A-Z0-9]/g, "").trim();
+          if (!code) {
+            return "";
+          }
+          return code.slice(0, 6);
+        } catch (e) {
+          return "";
+        }
+      }
+
+      function destroyPeerAndConn() {
+        if (state.sendTimer) {
+          clearTimeout(state.sendTimer);
+          state.sendTimer = null;
+        }
+
+        if (state.conn) {
+          try { state.conn.close(); } catch (e) {}
+          state.conn = null;
+        }
+
+        if (state.peer) {
+          try { state.peer.destroy(); } catch (e2) {}
+          state.peer = null;
+        }
+      }
+
+      function resetSessionUi() {
+        setMessage("");
+        el.hostReceiveWrap.classList.add("hidden");
+        el.hostReceivedText.value = "";
+        el.clientWriteWrap.classList.add("hidden");
+        el.clientText.value = "";
+        state.lastPayload = "";
+      }
+
+      function showConnectionLost() {
+        setStatus("err", "Conexión perdida");
+        setMessage(CONNECTION_LOST_MSG);
+      }
+
+      function attachConnectionHandlers(conn) {
+        state.conn = conn;
+
+        conn.on("open", function () {
+          setMessage("");
+          setStatus("ok", "Conectado");
+          if (state.role === "host") {
+            el.hostReceiveWrap.classList.remove("hidden");
+          }
+          if (state.role === "client") {
+            el.clientWriteWrap.classList.remove("hidden");
+            el.clientText.focus();
+          }
+        });
+
+        conn.on("data", function (payload) {
+          if (state.role !== "host") {
+            return;
+          }
+
+          var text = "";
+          if (typeof payload === "string") {
+            text = payload;
+          } else if (payload && typeof payload.text === "string") {
+            text = payload.text;
+          }
+          el.hostReceivedText.value = text;
+        });
+
+        conn.on("close", function () {
+          showConnectionLost();
+        });
+
+        conn.on("error", function () {
+          showConnectionLost();
+        });
+      }
+
+      function handlePeerError(err) {
+        if (!err || !err.type) {
+          setStatus("err", "Error");
+          return;
+        }
+
+        if (state.role === "host" && err.type === "unavailable-id") {
+          createHostPeer(2);
+          return;
+        }
+
+        if (state.role === "client" && err.type === "peer-unavailable") {
+          setStatus("err", "Código inválido");
+          setMessage(CODE_NOT_FOUND_MSG);
+          state.connecting = false;
+          return;
+        }
+
+        if (err.type === "network" || err.type === "server-error" || err.type === "socket-error" || err.type === "socket-closed") {
+          setStatus("err", "Sin conexión");
+          setMessage(SIGNALING_FAIL_MSG);
+          state.connecting = false;
+          return;
+        }
+
+        setStatus("err", "Error: " + err.type);
+      }
+
+      function createPeer(id) {
+        return new Peer(id, {
+          debug: 1
+        });
+      }
+
+      function createHostPeer(retriesLeft) {
+        var tryLeft = typeof retriesLeft === "number" ? retriesLeft : 3;
+
+        if (state.peer) {
+          try { state.peer.destroy(); } catch (e) {}
+          state.peer = null;
+        }
+
+        state.hostId = randomShortId(5);
+        el.hostCode.textContent = state.hostId;
+
+        state.peer = createPeer(state.hostId);
+
+        state.peer.on("open", function (id) {
+          state.hostId = id;
+          el.hostCode.textContent = id;
+          setStatus("wait", "Esperando conexión entrante");
+          setMessage("");
+          renderQr(buildJoinUrl(id));
+        });
+
+        state.peer.on("connection", function (conn) {
+          if (state.conn && state.conn.open) {
+            try { state.conn.close(); } catch (e) {}
+          }
+          attachConnectionHandlers(conn);
+        });
+
+        state.peer.on("disconnected", function () {
+          showConnectionLost();
+        });
+
+        state.peer.on("error", function (err) {
+          if (err && err.type === "unavailable-id" && tryLeft > 0) {
+            createHostPeer(tryLeft - 1);
+            return;
+          }
+          handlePeerError(err);
+        });
+      }
+
+      function renderQr(text) {
+        while (el.qrCode.firstChild) {
+          el.qrCode.removeChild(el.qrCode.firstChild);
+        }
+
+        if (typeof QRCode === "undefined") {
+          return;
+        }
+
+        state.qr = new QRCode(el.qrCode, {
+          text: text,
+          width: 200,
+          height: 200,
+          colorDark: "#111111",
+          colorLight: "#ffffff",
+          correctLevel: QRCode.CorrectLevel.M
+        });
+      }
+
+      function enterHostMode() {
+        destroyPeerAndConn();
+        resetSessionUi();
+        state.role = "host";
+        showView("host");
+        setStatus("wait", "Creando código");
+        createHostPeer(3);
+      }
+
+      function ensureClientPeer(callback) {
+        if (state.peer && state.peer.open) {
+          callback();
+          return;
+        }
+
+        if (state.peer) {
+          try { state.peer.destroy(); } catch (e) {}
+        }
+
+        state.peer = createPeer(undefined);
+
+        state.peer.on("open", function () {
+          callback();
+        });
+
+        state.peer.on("disconnected", function () {
+          showConnectionLost();
+        });
+
+        state.peer.on("error", function (err) {
+          handlePeerError(err);
+        });
+      }
+
+      function connectClient() {
+        if (state.connecting) {
+          return;
+        }
+
+        var code = (el.clientCode.value || "").toUpperCase().replace(/\s+/g, "").trim();
+        if (!code) {
+          setMessage("Ingresa un código para conectar.");
+          return;
+        }
+
+        state.connecting = true;
+        setMessage("");
+        setStatus("wait", "Conectando...");
+
+        ensureClientPeer(function () {
+          try {
+            var conn = state.peer.connect(code, { reliable: true });
+            attachConnectionHandlers(conn);
+
+            conn.on("open", function () {
+              state.connecting = false;
+            });
+
+            conn.on("error", function (err) {
+              state.connecting = false;
+              if (err && err.type === "peer-unavailable") {
+                setStatus("err", "Código inválido");
+                setMessage(CODE_NOT_FOUND_MSG);
+                return;
+              }
+              showConnectionLost();
+            });
+
+            conn.on("close", function () {
+              state.connecting = false;
+            });
+          } catch (e) {
+            state.connecting = false;
+            setStatus("err", "Error");
+            setMessage(CODE_NOT_FOUND_MSG);
+          }
+        });
+      }
+
+      function sendTextNow() {
+        if (!state.conn || !state.conn.open) {
+          return;
+        }
+
+        var text = el.clientText.value || "";
+        if (text === state.lastPayload) {
+          return;
+        }
+
+        state.conn.send({ text: text, t: Date.now() });
+        state.lastPayload = text;
+      }
+
+      function sendTextDebounced() {
+        if (state.sendTimer) {
+          clearTimeout(state.sendTimer);
+        }
+
+        state.sendTimer = setTimeout(function () {
+          sendTextNow();
+        }, 300);
+      }
+
+      function copyReceivedText() {
+        var text = el.hostReceivedText.value || "";
+        if (!text) {
+          return;
+        }
+
+        var done = function () {
+          var original = el.btnCopy.textContent;
+          el.btnCopy.textContent = "Copiado ✓";
+          el.btnCopy.disabled = true;
+          setTimeout(function () {
+            el.btnCopy.textContent = original;
+            el.btnCopy.disabled = false;
+          }, 2000);
+        };
+
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(done).catch(function () {
+            fallbackCopy(text, done);
+          });
+        } else {
+          fallbackCopy(text, done);
+        }
+      }
+
+      function fallbackCopy(text, onDone) {
+        var temp = document.createElement("textarea");
+        temp.value = text;
+        temp.setAttribute("readonly", "readonly");
+        temp.style.position = "fixed";
+        temp.style.top = "-9999px";
+        temp.style.left = "-9999px";
+        document.body.appendChild(temp);
+        temp.focus();
+        temp.select();
+
+        try {
+          document.execCommand("copy");
+          onDone();
+        } catch (e) {
+        }
+
+        document.body.removeChild(temp);
+      }
+
+      function enterClientMode() {
+        destroyPeerAndConn();
+        resetSessionUi();
+        state.role = "client";
+        showView("client");
+        setStatus("wait", "Esperando conexión");
+      }
+
+      function autoJoinFromUrlIfPresent() {
+        var codeFromUrl = getCodeFromUrl();
+        if (!codeFromUrl) {
+          return;
+        }
+
+        enterClientMode();
+        el.clientCode.value = codeFromUrl;
+        setStatus("wait", "Conectando...");
+        connectClient();
+      }
+
+      function wireEvents() {
+        el.btnRoleHost.addEventListener("click", enterHostMode);
+        el.btnRoleClient.addEventListener("click", enterClientMode);
+        el.btnConnect.addEventListener("click", connectClient);
+        el.btnSendNow.addEventListener("click", sendTextNow);
+        el.clientText.addEventListener("input", sendTextDebounced);
+        el.btnCopy.addEventListener("click", copyReceivedText);
+
+        el.clientCode.addEventListener("keydown", function (ev) {
+          if (ev.key === "Enter") {
+            ev.preventDefault();
+            connectClient();
+          }
+        });
+
+        window.addEventListener("beforeunload", function () {
+          destroyPeerAndConn();
+        });
+      }
+
+      function init() {
+        if (typeof Peer === "undefined") {
+          setStatus("err", "Error");
+          setMessage(SIGNALING_FAIL_MSG);
+          return;
+        }
+
+        wireEvents();
+        showView("role");
+        setStatus("wait", "Esperando acción");
+        autoJoinFromUrlIfPresent();
+      }
+
+      init();
+    })();
+  </script>
+</body>
+</html>
