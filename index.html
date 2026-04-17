@@ -569,7 +569,7 @@
 
       function attachConnectionHandlers(conn) {
         state.conn = conn;
-        logDiag("DataConnection creada");
+        logDiag("DataConnection creada: open=" + (conn && conn.open ? "true" : "false") + ", label=" + (conn && conn.label ? conn.label : "-") + ", peer=" + (conn && conn.peer ? conn.peer : "-"));
         wireRtcDiagnostics(conn, state.role === "host" ? "HOST" : "CLIENT");
 
         conn.on("open", function () {
@@ -820,6 +820,7 @@
 
         ensureClientPeer(function () {
           try {
+            logDiag("Cliente llamando peer.connect(" + code + ")");
             var conn = state.peer.connect(code, {
               reliable: false,
               serialization: "none",
@@ -828,6 +829,7 @@
                 createdAt: Date.now()
               }
             });
+            logDiag("Cliente peer.connect() retorno: open=" + (conn && conn.open ? "true" : "false") + ", label=" + (conn && conn.label ? conn.label : "-") + ", peer=" + (conn && conn.peer ? conn.peer : "-"));
             attachConnectionHandlers(conn);
 
             state.connectTimeoutTimer = setTimeout(function () {
@@ -863,6 +865,7 @@
               }
             });
           } catch (e) {
+            logDiag("Excepcion en peer.connect: " + (e && e.message ? e.message : "desconocida"));
             state.connecting = false;
             if (state.connectTimeoutTimer) {
               clearTimeout(state.connectTimeoutTimer);
