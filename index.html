@@ -351,6 +351,7 @@
         conn: null,
         hostId: "",
         connecting: false,
+        connectionEstablished: false,
         qr: null,
         sendTimer: null,
         lastPayload: "",
@@ -438,6 +439,9 @@
       }
 
       function destroyPeerAndConn() {
+        state.connectionEstablished = false;
+        state.connecting = false;
+
         if (state.sendTimer) {
           clearTimeout(state.sendTimer);
           state.sendTimer = null;
@@ -466,6 +470,8 @@
         el.clientWriteWrap.classList.add("hidden");
         el.clientText.value = "";
         state.lastPayload = "";
+        state.connectionEstablished = false;
+        state.connecting = false;
       }
 
       function showConnectionLost() {
@@ -479,6 +485,7 @@
         conn.on("open", function () {
           setMessage("");
           setStatus("ok", "Conectado");
+          state.connectionEstablished = true;
           if (state.role === "host") {
             el.hostReceiveWrap.classList.remove("hidden");
           }
@@ -503,11 +510,15 @@
         });
 
         conn.on("close", function () {
-          showConnectionLost();
+          if (state.connectionEstablished) {
+            showConnectionLost();
+          }
         });
 
         conn.on("error", function () {
-          showConnectionLost();
+          if (state.connectionEstablished) {
+            showConnectionLost();
+          }
         });
       }
 
@@ -583,10 +594,6 @@
           attachConnectionHandlers(conn);
         });
 
-        state.peer.on("disconnected", function () {
-          showConnectionLost();
-        });
-
         state.peer.on("error", function (err) {
           if (err && err.type === "unavailable-id" && tryLeft > 0) {
             createHostPeer(tryLeft - 1);
@@ -638,10 +645,6 @@
 
         state.peer.on("open", function () {
           callback();
-        });
-
-        state.peer.on("disconnected", function () {
-          showConnectionLost();
         });
 
         state.peer.on("error", function (err) {
