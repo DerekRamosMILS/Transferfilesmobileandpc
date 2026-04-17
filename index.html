@@ -823,7 +823,6 @@
             logDiag("Cliente llamando peer.connect(" + code + ")");
             var conn = state.peer.connect(code, {
               reliable: false,
-              serialization: "json",
               metadata: {
                 role: "client",
                 createdAt: Date.now()
