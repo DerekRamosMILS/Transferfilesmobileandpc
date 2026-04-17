@@ -343,6 +343,7 @@
       var CONNECTION_LOST_MSG = "Conexión perdida. Recarga la página para reconectar.";
       var SIGNALING_FAIL_MSG = "No se pudo conectar. Verifica tu conexión a internet.";
       var CODE_NOT_FOUND_MSG = "Código no encontrado. Verifica e intenta de nuevo.";
+      var CONNECT_TIMEOUT_MSG = "No se pudo establecer la conexión. Asegúrate de que el Host siga abierto y vuelve a intentar.";
 
       var state = {
         role: null,
@@ -352,7 +353,8 @@
         connecting: false,
         qr: null,
         sendTimer: null,
-        lastPayload: ""
+        lastPayload: "",
+        connectTimeoutTimer: null
       };
 
       var el = {
@@ -439,6 +441,11 @@
         if (state.sendTimer) {
           clearTimeout(state.sendTimer);
           state.sendTimer = null;
+        }
+
+        if (state.connectTimeoutTimer) {
+          clearTimeout(state.connectTimeoutTimer);
+          state.connectTimeoutTimer = null;
         }
 
         if (state.conn) {
@@ -534,7 +541,17 @@
 
       function createPeer(id) {
         return new Peer(id, {
-          debug: 1
+          debug: 1,
+          host: "0.peerjs.com",
+          port: 443,
+          path: "/",
+          secure: true,
+          config: {
+            iceServers: [
+              { urls: "stun:stun.l.google.com:19302" },
+              { urls: "stun:global.stun.twilio.com:3478" }
+            ]
+          }
         });
       }
 
@@ -647,17 +664,39 @@
         setMessage("");
         setStatus("wait", "Conectando...");
 
+        if (state.connectTimeoutTimer) {
+          clearTimeout(state.connectTimeoutTimer);
+          state.connectTimeoutTimer = null;
+        }
+
         ensureClientPeer(function () {
           try {
             var conn = state.peer.connect(code, { reliable: true });
             attachConnectionHandlers(conn);
 
+            state.connectTimeoutTimer = setTimeout(function () {
+              if (state.connecting) {
+                state.connecting = false;
+                setStatus("err", "Tiempo de espera agotado");
+                setMessage(CONNECT_TIMEOUT_MSG);
+                try { conn.close(); } catch (closeErr) {}
+              }
+            }, 12000);
+
             conn.on("open", function () {
               state.connecting = false;
+              if (state.connectTimeoutTimer) {
+                clearTimeout(state.connectTimeoutTimer);
+                state.connectTimeoutTimer = null;
+              }
             });
 
             conn.on("error", function (err) {
               state.connecting = false;
+              if (state.connectTimeoutTimer) {
+                clearTimeout(state.connectTimeoutTimer);
+                state.connectTimeoutTimer = null;
+              }
               if (err && err.type === "peer-unavailable") {
                 setStatus("err", "Código inválido");
                 setMessage(CODE_NOT_FOUND_MSG);
@@ -668,9 +707,17 @@
 
             conn.on("close", function () {
               state.connecting = false;
+              if (state.connectTimeoutTimer) {
+                clearTimeout(state.connectTimeoutTimer);
+                state.connectTimeoutTimer = null;
+              }
             });
           } catch (e) {
             state.connecting = false;
+            if (state.connectTimeoutTimer) {
+              clearTimeout(state.connectTimeoutTimer);
+              state.connectTimeoutTimer = null;
+            }
             setStatus("err", "Error");
             setMessage(CODE_NOT_FOUND_MSG);
           }
