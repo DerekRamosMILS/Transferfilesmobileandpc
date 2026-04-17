@@ -86,6 +86,33 @@
       z-index: 1;
     }
 
+    .app > .status,
+    .app > .card,
+    .app > .diag,
+    .app > .diag-toggle {
+      animation: riseIn 520ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    }
+
+    .app > .status {
+      animation-delay: 40ms;
+    }
+
+    .app > .card:nth-of-type(1) {
+      animation-delay: 100ms;
+    }
+
+    .app > .card:nth-of-type(2) {
+      animation-delay: 160ms;
+    }
+
+    .app > .card:nth-of-type(3) {
+      animation-delay: 220ms;
+    }
+
+    .app > .diag-toggle {
+      animation-delay: 280ms;
+    }
+
     .status {
       position: sticky;
       top: 0;
@@ -125,6 +152,17 @@
     .status-text {
       font-size: 14px;
       color: var(--fg);
+      transition: transform 180ms ease, color 180ms ease, text-shadow 180ms ease;
+    }
+
+    .status.is-live {
+      border-color: rgba(52, 211, 153, 0.38);
+      box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.12), 0 12px 40px rgba(0, 0, 0, 0.35), 0 0 34px rgba(52, 211, 153, 0.18);
+    }
+
+    .status.is-live .status-text {
+      color: #dcfce7;
+      text-shadow: 0 0 16px rgba(52, 211, 153, 0.18);
     }
 
     .card {
@@ -312,6 +350,16 @@
       color: #fda4af;
       font-size: 14px;
       margin-top: 8px;
+      transition: color 160ms ease, opacity 160ms ease, transform 160ms ease;
+    }
+
+    .msg.ok {
+      color: #86efac;
+    }
+
+    .msg.flash {
+      transform: translateY(-1px);
+      opacity: 1;
     }
 
     .diag {
@@ -319,6 +367,12 @@
       border-radius: 12px;
       background: linear-gradient(180deg, rgba(15, 23, 42, 0.84), rgba(10, 15, 30, 0.78));
       padding: 10px;
+    }
+
+    .diag-toggle {
+      justify-self: start;
+      padding-inline: 14px;
+      min-width: 160px;
     }
 
     .diag-title {
@@ -358,6 +412,35 @@
       }
       50% {
         transform: translate3d(0, 14px, 0) scale(1.05);
+      }
+    }
+
+    @keyframes riseIn {
+      from {
+        opacity: 0;
+        transform: translateY(12px) scale(0.985);
+        filter: blur(2px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+        filter: blur(0);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      body::before,
+      body::after,
+      .app > .status,
+      .app > .card,
+      .app > .diag,
+      .app > .diag-toggle {
+        animation: none !important;
+      }
+
+      .status-text,
+      .msg {
+        transition: none !important;
       }
     }
 
@@ -403,7 +486,7 @@
 </head>
 <body>
   <main class="app">
-    <div class="status" aria-live="polite">
+    <div id="statusBar" class="status" aria-live="polite">
       <span id="statusDot" class="dot wait"></span>
       <span id="statusText" class="status-text">Esperando acción</span>
     </div>
@@ -460,7 +543,9 @@
 
     <p id="globalMessage" class="msg" aria-live="assertive"></p>
 
-    <section class="diag" aria-live="polite">
+    <button id="btnToggleDiag" class="diag-toggle btn-secondary" type="button" aria-expanded="false">Mostrar diagnóstico</button>
+
+    <section id="diagPanel" class="diag hidden" aria-live="polite">
       <p class="diag-title">Diagnóstico de conexión</p>
       <pre id="diagLog" class="diag-log">Iniciando...</pre>
     </section>
@@ -498,7 +583,10 @@
       var el = {
         statusDot: document.getElementById("statusDot"),
         statusText: document.getElementById("statusText"),
+        statusBar: document.getElementById("statusBar"),
         globalMessage: document.getElementById("globalMessage"),
+        btnToggleDiag: document.getElementById("btnToggleDiag"),
+        diagPanel: document.getElementById("diagPanel"),
 
         roleView: document.getElementById("roleView"),
         hostView: document.getElementById("hostView"),
@@ -566,10 +654,20 @@
       function setStatus(kind, text) {
         el.statusDot.className = "dot " + kind;
         el.statusText.textContent = text;
+        el.statusBar.classList.toggle("is-live", kind === "ok");
       }
 
       function setMessage(text) {
         el.globalMessage.textContent = text || "";
+        el.globalMessage.classList.remove("ok", "flash");
+        if (text) {
+          if (text.indexOf("Conectado") === 0 || text.indexOf("Copiado") === 0) {
+            el.globalMessage.classList.add("ok");
+          }
+          requestAnimationFrame(function () {
+            el.globalMessage.classList.add("flash");
+          });
+        }
       }
 
       function showView(viewName) {
@@ -681,6 +779,7 @@
           state.helloAcked = false;
           setMessage("");
           setStatus("ok", "Conectado");
+          setMessage("Conectado y listo.");
           state.connectionEstablished = true;
           logDiag("Canal abierto (open)");
           if (state.role === "host") {
@@ -1010,9 +1109,11 @@
           var original = el.btnCopy.textContent;
           el.btnCopy.textContent = "Copiado ✓";
           el.btnCopy.disabled = true;
+          setMessage("Texto copiado al portapapeles.");
           setTimeout(function () {
             el.btnCopy.textContent = original;
             el.btnCopy.disabled = false;
+            setMessage("");
           }, 2000);
         };
 
@@ -1073,6 +1174,12 @@
         el.btnSendNow.addEventListener("click", sendTextNow);
         el.clientText.addEventListener("input", sendTextDebounced);
         el.btnCopy.addEventListener("click", copyReceivedText);
+        el.btnToggleDiag.addEventListener("click", function () {
+          var isHidden = el.diagPanel.classList.contains("hidden");
+          el.diagPanel.classList.toggle("hidden");
+          el.btnToggleDiag.textContent = isHidden ? "Ocultar diagnóstico" : "Mostrar diagnóstico";
+          el.btnToggleDiag.setAttribute("aria-expanded", isHidden ? "true" : "false");
+        });
 
         el.clientCode.addEventListener("keydown", function (ev) {
           if (ev.key === "Enter") {
