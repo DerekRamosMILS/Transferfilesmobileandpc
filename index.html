@@ -377,7 +377,7 @@
       var SIGNALING_FAIL_MSG = "No se pudo conectar. Verifica tu conexión a internet.";
       var CODE_NOT_FOUND_MSG = "Código no encontrado. Verifica e intenta de nuevo.";
       var CONNECT_TIMEOUT_MSG = "No se pudo establecer la conexión. Asegúrate de que el Host siga abierto y vuelve a intentar.";
-      var MAX_CLIENT_RETRIES = 2;
+      var CLIENT_CONNECT_TIMEOUT_MS = 60000;
 
       var state = {
         role: null,
@@ -390,7 +390,6 @@
         sendTimer: null,
         lastPayload: "",
         connectTimeoutTimer: null,
-        clientRetryCount: 0,
         helloAckTimer: null,
         helloAcked: false,
         diagLines: []
@@ -492,7 +491,6 @@
       function destroyPeerAndConn() {
         state.connectionEstablished = false;
         state.connecting = false;
-        state.clientRetryCount = 0;
         state.helloAcked = false;
 
         if (state.sendTimer) {
@@ -530,7 +528,6 @@
         state.lastPayload = "";
         state.connectionEstablished = false;
         state.connecting = false;
-        state.clientRetryCount = 0;
         state.helloAcked = false;
       }
 
@@ -783,7 +780,7 @@
         state.connecting = true;
         setMessage("");
         setStatus("wait", "Conectando...");
-        logDiag("Intento cliente -> host: " + code + " (intento " + (state.clientRetryCount + 1) + ")");
+        logDiag("Intento cliente -> host: " + code);
 
         if (state.connectTimeoutTimer) {
           clearTimeout(state.connectTimeoutTimer);
@@ -798,21 +795,12 @@
             state.connectTimeoutTimer = setTimeout(function () {
               if (state.connecting) {
                 state.connecting = false;
-                if (state.clientRetryCount < MAX_CLIENT_RETRIES) {
-                  state.clientRetryCount += 1;
-                  logDiag("Timeout. Reintentando automáticamente...");
-                  try { conn.close(); } catch (closeErr1) {}
-                  setStatus("wait", "Reintentando conexión...");
-                  setMessage("Reintentando conexión automáticamente...");
-                  setTimeout(connectClient, 800);
-                  return;
-                }
                 setStatus("err", "Tiempo de espera agotado");
                 setMessage(CONNECT_TIMEOUT_MSG);
-                logDiag("Timeout final tras reintentos");
+                logDiag("Timeout final");
                 try { conn.close(); } catch (closeErr) {}
               }
-            }, 20000);
+            }, CLIENT_CONNECT_TIMEOUT_MS);
 
             conn.on("error", function (err) {
               state.connecting = false;
