@@ -483,6 +483,11 @@
         state.conn = conn;
 
         conn.on("open", function () {
+          state.connecting = false;
+          if (state.connectTimeoutTimer) {
+            clearTimeout(state.connectTimeoutTimer);
+            state.connectTimeoutTimer = null;
+          }
           setMessage("");
           setStatus("ok", "Conectado");
           state.connectionEstablished = true;
@@ -684,15 +689,7 @@
                 setMessage(CONNECT_TIMEOUT_MSG);
                 try { conn.close(); } catch (closeErr) {}
               }
-            }, 12000);
-
-            conn.on("open", function () {
-              state.connecting = false;
-              if (state.connectTimeoutTimer) {
-                clearTimeout(state.connectTimeoutTimer);
-                state.connectTimeoutTimer = null;
-              }
-            });
+            }, 20000);
 
             conn.on("error", function (err) {
               state.connecting = false;
