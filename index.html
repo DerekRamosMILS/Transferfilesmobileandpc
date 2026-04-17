@@ -227,6 +227,34 @@
       margin-top: 8px;
     }
 
+    .diag {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fafafa;
+      padding: 10px;
+    }
+
+    .diag-title {
+      margin: 0 0 6px;
+      font-size: 12px;
+      color: #374151;
+      font-weight: 700;
+      letter-spacing: 0.2px;
+      text-transform: uppercase;
+    }
+
+    .diag-log {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      color: #374151;
+      max-height: 140px;
+      overflow: auto;
+      line-height: 1.35;
+    }
+
     .caption {
       margin: 0 0 8px;
       color: var(--muted);
@@ -331,6 +359,11 @@
     </section>
 
     <p id="globalMessage" class="msg" aria-live="assertive"></p>
+
+    <section class="diag" aria-live="polite">
+      <p class="diag-title">Diagnóstico de conexión</p>
+      <pre id="diagLog" class="diag-log">Iniciando...</pre>
+    </section>
   </main>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.2/peerjs.min.js"></script>
@@ -344,6 +377,7 @@
       var SIGNALING_FAIL_MSG = "No se pudo conectar. Verifica tu conexión a internet.";
       var CODE_NOT_FOUND_MSG = "Código no encontrado. Verifica e intenta de nuevo.";
       var CONNECT_TIMEOUT_MSG = "No se pudo establecer la conexión. Asegúrate de que el Host siga abierto y vuelve a intentar.";
+      var MAX_CLIENT_RETRIES = 2;
 
       var state = {
         role: null,
@@ -355,7 +389,11 @@
         qr: null,
         sendTimer: null,
         lastPayload: "",
-        connectTimeoutTimer: null
+        connectTimeoutTimer: null,
+        clientRetryCount: 0,
+        helloAckTimer: null,
+        helloAcked: false,
+        diagLines: []
       };
 
       var el = {
@@ -380,8 +418,21 @@
         btnConnect: document.getElementById("btnConnect"),
         clientWriteWrap: document.getElementById("clientWriteWrap"),
         clientText: document.getElementById("clientText"),
-        btnSendNow: document.getElementById("btnSendNow")
+        btnSendNow: document.getElementById("btnSendNow"),
+        diagLog: document.getElementById("diagLog")
       };
+
+      function logDiag(text) {
+        var now = new Date();
+        var hh = String(now.getHours()).padStart(2, "0");
+        var mm = String(now.getMinutes()).padStart(2, "0");
+        var ss = String(now.getSeconds()).padStart(2, "0");
+        state.diagLines.push("[" + hh + ":" + mm + ":" + ss + "] " + text);
+        if (state.diagLines.length > 14) {
+          state.diagLines = state.diagLines.slice(state.diagLines.length - 14);
+        }
+        el.diagLog.textContent = state.diagLines.join("\n");
+      }
 
       function setStatus(kind, text) {
         el.statusDot.className = "dot " + kind;
@@ -441,6 +492,8 @@
       function destroyPeerAndConn() {
         state.connectionEstablished = false;
         state.connecting = false;
+        state.clientRetryCount = 0;
+        state.helloAcked = false;
 
         if (state.sendTimer) {
           clearTimeout(state.sendTimer);
@@ -450,6 +503,11 @@
         if (state.connectTimeoutTimer) {
           clearTimeout(state.connectTimeoutTimer);
           state.connectTimeoutTimer = null;
+        }
+
+        if (state.helloAckTimer) {
+          clearTimeout(state.helloAckTimer);
+          state.helloAckTimer = null;
         }
 
         if (state.conn) {
@@ -472,15 +530,19 @@
         state.lastPayload = "";
         state.connectionEstablished = false;
         state.connecting = false;
+        state.clientRetryCount = 0;
+        state.helloAcked = false;
       }
 
       function showConnectionLost() {
         setStatus("err", "Conexión perdida");
         setMessage(CONNECTION_LOST_MSG);
+        logDiag("Conexión cerrada o perdida");
       }
 
       function attachConnectionHandlers(conn) {
         state.conn = conn;
+        logDiag("DataConnection creada");
 
         conn.on("open", function () {
           state.connecting = false;
@@ -488,19 +550,47 @@
             clearTimeout(state.connectTimeoutTimer);
             state.connectTimeoutTimer = null;
           }
+          state.helloAcked = false;
           setMessage("");
           setStatus("ok", "Conectado");
           state.connectionEstablished = true;
+          logDiag("Canal abierto (open)");
           if (state.role === "host") {
             el.hostReceiveWrap.classList.remove("hidden");
+            try { state.conn.send({ kind: "hello-ack", t: Date.now() }); } catch (e) {}
           }
           if (state.role === "client") {
             el.clientWriteWrap.classList.remove("hidden");
             el.clientText.focus();
+            try { state.conn.send({ kind: "hello", t: Date.now() }); } catch (e2) {}
+
+            if (state.helloAckTimer) {
+              clearTimeout(state.helloAckTimer);
+              state.helloAckTimer = null;
+            }
+
+            state.helloAckTimer = setTimeout(function () {
+              if (!state.helloAcked && state.connectionEstablished) {
+                logDiag("Canal abierto sin ACK (posible red inestable)");
+              }
+            }, 3000);
           }
         });
 
         conn.on("data", function (payload) {
+          if (payload && payload.kind === "hello") {
+            logDiag("Host recibió HELLO");
+            try { state.conn.send({ kind: "hello-ack", t: Date.now() }); } catch (e3) {}
+            return;
+          }
+
+          if (payload && payload.kind === "hello-ack") {
+            state.helloAcked = true;
+            logDiag("Cliente recibió ACK");
+            setStatus("ok", "Conectado y verificado");
+            return;
+          }
+
           if (state.role !== "host") {
             return;
           }
@@ -515,12 +605,14 @@
         });
 
         conn.on("close", function () {
+          logDiag("Evento close en datachannel");
           if (state.connectionEstablished) {
             showConnectionLost();
           }
         });
 
-        conn.on("error", function () {
+        conn.on("error", function (err) {
+          logDiag("Error datachannel: " + (err && err.type ? err.type : "desconocido"));
           if (state.connectionEstablished) {
             showConnectionLost();
           }
@@ -528,6 +620,8 @@
       }
 
       function handlePeerError(err) {
+        logDiag("Peer error: " + (err && err.type ? err.type : "desconocido"));
+
         if (!err || !err.type) {
           setStatus("err", "Error");
           return;
@@ -594,16 +688,19 @@
         el.hostCode.textContent = state.hostId;
 
         state.peer = createPeer(state.hostId);
+        logDiag("Host creando peer " + state.hostId);
 
         state.peer.on("open", function (id) {
           state.hostId = id;
           el.hostCode.textContent = id;
           setStatus("wait", "Esperando conexión entrante");
           setMessage("");
+          logDiag("Host peer abierto: " + id);
           renderQr(buildJoinUrl(id));
         });
 
         state.peer.on("connection", function (conn) {
+          logDiag("Host recibió conexión entrante");
           if (state.conn && state.conn.open) {
             try { state.conn.close(); } catch (e) {}
           }
@@ -644,11 +741,13 @@
         state.role = "host";
         showView("host");
         setStatus("wait", "Creando código");
+        logDiag("Modo host seleccionado");
         createHostPeer(3);
       }
 
       function ensureClientPeer(callback) {
         if (state.peer && state.peer.open) {
+          logDiag("Cliente reutiliza peer local");
           callback();
           return;
         }
@@ -658,8 +757,10 @@
         }
 
         state.peer = createPeer(undefined);
+        logDiag("Cliente creando peer local");
 
         state.peer.on("open", function () {
+          logDiag("Cliente peer abierto");
           callback();
         });
 
@@ -682,6 +783,7 @@
         state.connecting = true;
         setMessage("");
         setStatus("wait", "Conectando...");
+        logDiag("Intento cliente -> host: " + code + " (intento " + (state.clientRetryCount + 1) + ")");
 
         if (state.connectTimeoutTimer) {
           clearTimeout(state.connectTimeoutTimer);
@@ -696,8 +798,18 @@
             state.connectTimeoutTimer = setTimeout(function () {
               if (state.connecting) {
                 state.connecting = false;
+                if (state.clientRetryCount < MAX_CLIENT_RETRIES) {
+                  state.clientRetryCount += 1;
+                  logDiag("Timeout. Reintentando automáticamente...");
+                  try { conn.close(); } catch (closeErr1) {}
+                  setStatus("wait", "Reintentando conexión...");
+                  setMessage("Reintentando conexión automáticamente...");
+                  setTimeout(connectClient, 800);
+                  return;
+                }
                 setStatus("err", "Tiempo de espera agotado");
                 setMessage(CONNECT_TIMEOUT_MSG);
+                logDiag("Timeout final tras reintentos");
                 try { conn.close(); } catch (closeErr) {}
               }
             }, 20000);
@@ -711,6 +823,7 @@
               if (err && err.type === "peer-unavailable") {
                 setStatus("err", "Código inválido");
                 setMessage(CODE_NOT_FOUND_MSG);
+                logDiag("Host no encontrado (peer-unavailable)");
                 return;
               }
               showConnectionLost();
@@ -810,6 +923,7 @@
         state.role = "client";
         showView("client");
         setStatus("wait", "Esperando conexión");
+        logDiag("Modo cliente seleccionado");
       }
 
       function autoJoinFromUrlIfPresent() {
@@ -854,6 +968,7 @@
         wireEvents();
         showView("role");
         setStatus("wait", "Esperando acción");
+        logDiag("App cargada. Esperando rol");
         autoJoinFromUrlIfPresent();
       }
 
